@@ -87,12 +87,13 @@ class DroneAStarPlanner:
         (1, -1),
     ]
 
-    def __init__(self, terrain: Grid, alpha: float = 0.35) -> None:
+    def __init__(self, terrain: Grid, alpha: float = 0.35, strict_corner_cutting:bool = False) -> None:
         """Store terrain and obstacle penalty factor for custom heuristic."""
         self.terrain = terrain
         self.rows = len(terrain)
         self.cols = len(terrain[0]) if self.rows > 0 else 0
         self.alpha = alpha
+        self.strict_corner_cutting=strict_corner_cutting
 
     def in_bounds(self, r: int, c: int) -> bool:
         """Check whether cell index is inside grid bounds."""
@@ -105,6 +106,11 @@ class DroneAStarPlanner:
     def move_cost(self, current: Point, nxt: Point) -> float:
         """Uniform movement cost chosen for sample-style shortest-step paths."""
         # Uniform move cost keeps path scoring consistent with the assignment samples.
+        #return 1.0
+        dr = abs(current[0] - nxt[0])
+        dc = abs(current[1] - nxt[1])
+        if dr == 1 and dc == 1:
+            return math.sqrt(2)
         return 1.0
 
     def euclidean(self, node: Point, goal: Point) -> float:
@@ -143,7 +149,10 @@ class DroneAStarPlanner:
         # practical diagonal motion in partially open spaces.
         side_1 = (current[0] + dr, current[1])
         side_2 = (current[0], current[1] + dc)
-        return self.is_free(*side_1) or self.is_free(*side_2)
+        if self.strict_corner_cutting:
+            return self.is_free(*side_1) and  self.is_free(*side_2)
+        else:
+            return self.is_free(*side_1) or self.is_free(*side_2)
 
     def reconstruct_path(self, parent: Dict[Point, Point], end: Point) -> List[Point]:
         """Backtrack from goal to start using parent map."""
@@ -306,14 +315,14 @@ def write_output_file(file_path: str, euclidean_result: SearchResult, obstacle_r
     Path(file_path).write_text(f"{euclidean_line}\n{obstacle_line}\n", encoding="utf-8")
 
 
-def run_from_files(input_file: str, output_file: str, alpha: float = 0.35) -> None:
+def run_from_files(input_file: str, output_file: str, alpha: float = 0.35, strict_corner_cutting: bool = False) -> None:
     """
     End-to-end execution wrapper for assignment evaluation.
     Reads input -> runs both heuristics -> writes output with guarded error messages.
     """
     try:
         terrain, start, end = parse_input_file(input_file)
-        planner = DroneAStarPlanner(terrain, alpha=alpha)
+        planner = DroneAStarPlanner(terrain, alpha=alpha, strict_corner_cutting=strict_corner_cutting)
 
         euclidean_result = planner.plan(start, end, heuristic_type="euclidean")
         obstacle_result = planner.plan(start, end, heuristic_type="obstacle")
@@ -350,10 +359,11 @@ if __name__ == "__main__":
         "--alpha",
         dest="alpha",
         type=float,
-        default=0.35,
+        default=1.25,
         # Keep alpha configurable for easy tuning of obstacle penalty.
         help="Obstacle penalty factor for obstacle-aware heuristic.",
     )
+    parser.add_argument("--strict_corner_cutting", dest="strict_corner_cutting", type=bool, default=False, help="Use strict corner-cutting with diagonal both 1 and 1.")
     args = parser.parse_args()
 
     input_path = Path(args.input_file)
@@ -365,4 +375,4 @@ if __name__ == "__main__":
     if not output_path.is_absolute():
         output_path = base_dir / output_path
 
-    run_from_files(str(input_path), str(output_path), alpha=args.alpha)
+    run_from_files(str(input_path), str(output_path), alpha=args.alpha, strict_corner_cutting=args.strict_corner_cutting)
